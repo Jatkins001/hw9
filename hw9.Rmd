@@ -1,0 +1,179 @@
+---
+title: "hw9"
+author: "Jermaine Atkins"
+date: "2024-11-14"
+output: html_document
+---
+This is Part 2 of a 3-part series. Part 1 estimated OLS. Part 2 will
+estimate logit models; Part 3 will estimate fancier machine learning
+models.
+
+Using the same couples data as last time, for this lab we’ll estimate
+logit and probit models instead of just OLS as we did in Lab 7. But if
+you use the same subgroup and same model, you can compare the
+predictions from each method. Look at subgroups to see if there are
+particular groups where the models are more confused. Look at the
+tradeoff of false positive vs false negative. Are there explanatory
+variables (features) that are consistently of little predictive value?
+  Can you find better ones?
+  
+  Are these X-variables exogenous? As you add more, think about causality.
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(tidyverse)
+library(haven)
+
+setwd("/Users/Jermaineatkins/Desktop/R/") 
+load("Acs.2021.couples.RData")
+summary(acs2021_couples)
+acs2021_couples$age_diff <- acs2021_couples$AGE - acs2021_couples$h_age
+acs2021_couples$educ_numeric <- fct_recode(acs2021_couples$EDUC,
+                                           "0" = "N/A or no schooling",
+                                           "2" = "Nursery school to grade 4",
+                                           "6.5" = "Grade 5, 6, 7, or 8",
+                                           "9" = "Grade 9",
+                                           "10" = "Grade 10",
+                                           "11" = "Grade 11",
+                                           "12" = "Grade 12",
+                                           "13" = "1 year of college",
+                                           "14" = "2 years of college",
+                                           "15" = "3 years of college",
+                                           "16" = "4 years of college",
+                                           "17" = "5+ years of college")
+
+acs2021_couples$educ_numeric <- as.numeric(levels(acs2021_couples$educ_numeric))[acs2021_couples$educ_numeric]
+
+acs2021_couples$h_educ_numeric <- fct_recode(acs2021_couples$h_educ,
+                                             "0" = "N/A or no schooling",
+                                             "2" = "Nursery school to grade 4",
+                                             "6.5" = "Grade 5, 6, 7, or 8",
+                                             "9" = "Grade 9",
+                                             "10" = "Grade 10",
+                                             "11" = "Grade 11",
+                                             "12" = "Grade 12",
+                                             "13" = "1 year of college",
+                                             "14" = "2 years of college",
+                                             "15" = "3 years of college",
+                                             "16" = "4 years of college",
+                                             "17" = "5+ years of college")
+
+acs2021_couples$h_educ_numeric <- as.numeric(levels(acs2021_couples$h_educ_numeric))[acs2021_couples$h_educ_numeric]
+
+acs2021_couples$educ_diff <- acs2021_couples$educ_numeric - acs2021_couples$h_educ_numeric
+
+"Let me fix up a couple of the variables with somewhat mysterious coding"
+
+acs2021_couples$RACE <- fct_recode(as.factor(acs2021_couples$RACE),
+                                   "White" = "1",
+                                   "Black" = "2",
+                                   "American Indian or Alaska Native" = "3",
+                                   "Chinese" = "4",
+                                   "Japanese" = "5",
+                                   "Other Asian or Pacific Islander" = "6",
+                                   "Other race" = "7",
+                                   "two races" = "8",
+                                   "three races" = "9")
+
+acs2021_couples$h_race <- fct_recode(as.factor(acs2021_couples$h_race),
+                                     "White" = "1",
+                                     "Black" = "2",
+                                     "American Indian or Alaska Native" = "3",
+                                     "Chinese" = "4",
+                                     "Japanese" = "5",
+                                     "Other Asian or Pacific Islander" = "6",
+                                     "Other race" = "7",
+                                     "two races" = "8",
+                                     "three races" = "9")
+
+
+
+
+
+## With 0/1 y-variable
+"I'll look at what factors relate to a partner being older and I'll choose to consider 
+traditional pairs, where a man and woman are married and he is placed as householder 
+(in the olden days, would be called 'head of household'). I'll create a dummy variable for 
+if the man is more than 5 years older than the woman. You can pick a different number than 5!" 
+
+trad_data <- acs2021_couples %>% filter( (SEX == "Female") & (h_sex == "Male") )
+
+
+trad_data$he_more_than_10yrs_than_her <- as.numeric(trad_data$age_diff < -10)
+
+
+"Note the variable name.
+
+All the math underlying is just concerned with which of the x-variables make 
+the y-variable more likely to be a higher number. In this case it's ok, I've set it up for you,
+but in general you want to confirm which factor answer is one and which is zero.
+
+For instance,"
+table(trad_data$he_more_than_10yrs_than_her,cut(trad_data$age_diff,c(-100,-10, -5, 0, 5, 10, 100)))
+
+
+
+```
+
+## PREDICTIONS
+
+```{r}
+model1 <- lm(he_more_than_10yrs_than_her ~ REGION + h_race + AGE, data = trad_data)
+summary(model1)
+"Model 1"
+pred_vals_mod1 <- predict(model1, trad_data) # Storing predicted values 
+pred_model_mod1 <- (pred_vals_mod1 > mean(pred_vals_mod1)) #takes the value of TRUE if the predicted value from model is greater than the mean of the predicted values and FALSE otherwise 
+table(pred = pred_model_mod1, true = trad_data$he_more_than_10yrs_than_her) #create a confusion matrix 
+# the confusion matrix shows the number of true positives (16820), true negatives (201451), false positives (9525), and false negatives (184479)
+
+```
+
+## Graph
+
+```{r  echo=FALSE}
+ggplot(data = model1 ,
+       aes(x = pred_model_mod1, y =pred_vals_mod1 )) +
+  geom_bar(stat = "identity", fill = "purple") +
+  labs(title = "predicted values",
+       x = "mean",
+       y = "Predicted Value") + 
+  theme_update()
+```
+
+##Logit model & Predictions
+```{r}
+Model.logit1 <- glm(he_more_than_10yrs_than_her ~ REGION + h_race + AGE, data = trad_data, family = binomial)
+summary(Model.logit1)
+
+pred_valslogit1 <- predict(Model.logit1, trad_data, type = "response")
+pred_model_logit1 <- (pred_valslogit1 > mean(pred_valslogit1))
+table(pred = pred_model_logit1, true = trad_data$he_more_than_10yrs_than_her)
+```
+##Logit Graph
+```{r}
+ggplot(data = Model.logit1 ,
+       aes(x = pred_model_logit1, y =pred_valslogit1 )) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "predicted values",
+       x = "mean",
+       y = "Predicted Value logit") + 
+  theme_test()
+```
+##when analyzing both models, one can find that the logitistic model predicts more false positives than the ols modeland fewer false negatives compared to the OLS mode.the h_race of japanese can be seen as insigificant due to its pvalue being high (.49).
+Adding New Variable to replace insiginificant variable 
+```{r}
+model2 <- lm(he_more_than_10yrs_than_her ~ REGION + DEGFIELD + AGE, data = trad_data)
+
+pred_vals_mod2 <- predict(model2, trad_data) 
+pred_model_mod2 <- (pred_vals_mod2 > mean(pred_vals_mod2)) 
+table(pred = pred_model_mod2, true = trad_data$he_more_than_10yrs_than_her) 
+
+Model.logit2 <- glm(he_more_than_10yrs_than_her ~ REGION + DEGFIELD + AGE, data = trad_data, family = binomial)
+
+pred_valslogit2 <- predict(Model.logit2, trad_data, type = "response")
+pred_model_logit2 <- (pred_valslogit2 > mean(pred_valslogit2))
+table(pred = pred_model_logit2, true = trad_data$he_more_than_10yrs_than_her)
+```
+##Adding DEGFIELD improved upon our old model slightly by adding more statistically significant variables, but there is still room for improvement as there are some variables within the models that have high p-values"
+
